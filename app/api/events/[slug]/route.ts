@@ -1,84 +1,64 @@
-import { NextRequest, NextResponse } from 'next/server';
+import {NextRequest, NextResponse} from "next/server";
+import { v2 as cloudinary } from 'cloudinary';
 
-import connectDB from '@/lib/mongodb';
-import Event, { IEvent } from '@/database/event.model';
+import connectDB from "@/lib/mongodb";
+import Event from '@/database/event.model';
 
-// Define route params type for type safety
-type RouteParams = {
-    params: Promise<{
-        slug: string;
-    }>;
-};
-
-/**
- * GET /api/events/[slug]
- * Fetches a single events by its slug
- */
-export async function GET(
-    req: NextRequest,
-    { params }: RouteParams
-): Promise<NextResponse> {
+export async function POST(req: NextRequest) {
     try {
-        // Connect to database
         await connectDB();
 
-        // Await and extract slug from params
-        const { slug } = await params;
+        const formData = await req.formData();
 
-        // Validate slug parameter
-        if (!slug || typeof slug !== 'string' || slug.trim() === '') {
-            return NextResponse.json(
-                { message: 'Invalid or missing slug parameter' },
-                { status: 400 }
-            );
+        let event;
+
+        try {
+            event = Object.fromEntries(formData.entries());
+        } catch (e) {
+            return NextResponse.json({ message: 'Invalid JSON data format'}, { status: 400 })
         }
 
-        // Sanitize slug (remove any potential malicious input)
-        const sanitizedSlug = slug.trim().toLowerCase();
+        const file = formData.get('image') as File;
 
-        // Query events by slug
-        const event = await Event.findOne({ slug: sanitizedSlug }).lean();
+        if(!file) return NextResponse.json({ message: 'Image file is required'}, { status: 400 })
 
-        // Handle events not found
-        if (!event) {
-            return NextResponse.json(
-                { message: `Event with slug '${sanitizedSlug}' not found` },
-                { status: 404 }
-            );
-        }
+        let tags = JSON.parse(formData.get('tags') as string);
+        let agenda = JSON.parse(formData.get('agenda') as string);
 
-        // Return successful response with events data
-        return NextResponse.json(
-            { message: 'Event fetched successfully', event },
-            { status: 200 }
-        );
-    } catch (error) {
-        // Log error for debugging (only in development)
-        if (process.env.NODE_ENV === 'development') {
-            console.error('Error fetching events by slug:', error);
-        }
+        const arrayBuffer = await file.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
 
-        // Handle specific error types
-        if (error instanceof Error) {
-            // Handle database connection errors
-            if (error.message.includes('MONGODB_URI')) {
-                return NextResponse.json(
-                    { message: 'Database configuration error' },
-                    { status: 500 }
-                );
-            }
+        const uploadResult = await new Promise((resolve, reject) => {
+            cloudinary.uploader.upload_stream({ resource_type: 'image', folder: 'DevEvent' }, (error, results) => {
+                if(error) return reject(error);
 
-            // Return generic error with error message
-            return NextResponse.json(
-                { message: 'Failed to fetch events', error: error.message },
-                { status: 500 }
-            );
-        }
+                resolve(results);
+            }).end(buffer);
+        });
 
-        // Handle unknown errors
-        return NextResponse.json(
-            { message: 'An unexpected error occurred' },
-            { status: 500 }
-        );
+        event.image = (uploadResult as { secure_url: string }).secure_url;
+
+        const createdEvent = await Event.create({
+            ...event,
+            tags: tags,
+            agenda: agenda,
+        });
+
+        return NextResponse.json({ message: 'Event created successfully', event: createdEvent }, { status: 201 });
+    } catch (e) {
+        console.error(e);
+        return NextResponse.json({ message: 'Event Creation Failed', error: e instanceof Error ? e.message : 'Unknown'}, { status: 500 })
+    }
+}
+
+export async function GET() {
+    try {
+        await connectDB();
+
+        const events = await Event.find().sort({ createdAt: -1 });
+
+        return NextResponse.json({ message: 'Events fetched successfully', events }, { status: 200 });
+    } catch (e) {
+        return NextResponse.json({ message: 'Event fetching failed', error: e }, { status: 500 });
     }
 }
