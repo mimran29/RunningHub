@@ -3,8 +3,11 @@
 import React from 'react';
 import Image from "next/image";
 
+
 const ExploreBtn = () => {
+
     return (
+
         <button type="button" id="explore-btn" className="mt-7 mx-auto" onClick={()=> console.log('CLICK')}>
         <a href="#events">
             Explore Events

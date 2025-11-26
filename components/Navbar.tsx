@@ -10,7 +10,7 @@ const Navbar = () => {
             <Link href="/" className="logo">
                 <Image src="/icons/logo.svg" alt="logo" width={50} height={50} />
                 <p>
-                    Running Events
+                    DevEvents
                 </p>
             </Link>
             <ul>
